@@ -11,7 +11,7 @@ bot.command("send_ad", async (ctx) => {
   const userId = ctx.from.id;
 
   if (!adminIds.includes(userId)) {
-    return await ctx.reply("🚫 Sorry, you are not authorized to send ads.");
+    return await ctx.reply("🚫 Sorry you are not authorized to send ads.");
   }
 
   await ctx.reply(
