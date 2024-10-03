@@ -1,25 +1,68 @@
-const { Bot, session, InlineKeyboard } = require("grammy");
+require("dotenv/config");
+const {
+  Bot,
+  session,
+  InlineKeyboard,
+  InlineQueryResultBuilder,
+} = require("grammy");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 const bot = new Bot(process.env.BOT_TOKEN);
+
 const adminIds = [parseInt(process.env.ADMIN)];
 
 bot.use(session({ initial: () => ({}) }));
 
+// Reklama yuborish komandasi
 bot.command("send_ad", async (ctx) => {
   const userId = ctx.from.id;
 
   if (!adminIds.includes(userId)) {
-    return await ctx.reply("🚫 Sorry you are not authorized to send ads.");
+    return await ctx.reply(
+      "🚫 Kechirasiz, siz reklamalarni yuborishga ruxsat etilmadingiz."
+    );
   }
 
   await ctx.reply(
-    "📝 Iltimos reklamangizni jo'nating (text, image, video, yoki document):"
+    "📝 Iltimos, reklamangizni yuboring (matn, rasm, video yoki hujjat):"
   );
   ctx.session.isSendingAd = true;
 });
 
+// Unique havolalar uchun Inline Query Handler
+bot.on("inline_query", async (ctx) => {
+  const query = ctx.inlineQuery.query.trim();
+
+  // Agar so'rov bo'sh bo'lsa, default taklifni ko'rsating
+  if (!query) {
+    const uniqueLink = `https://t.me/${ctx.me.username}?start=${ctx.from.id}`;
+    const result = InlineQueryResultBuilder.article(
+      "Ulashish",
+      "📤 Shaxsiy linkingizni ulashing!",
+      {
+        reply_markup: new InlineKeyboard()
+          .url("✍️ Savol Berish", uniqueLink)
+          .row(),
+      }
+    ).text(
+      `🔗 ✅ «Anonim savollar» rasmiy boti.
+
+🤓 Men bilan anonim suhbat quring. Sizning kimligingiz qabul qiluvchiga ko'rinmaydi.
+
+Quyidagi havola orqali xabaringizni yo'llang!⤵️: 
+${uniqueLink}\n\nUlashish uchun bosing!`
+    );
+
+    await ctx.answerInlineQuery([result], { cache_time: 0 });
+    return;
+  }
+
+  // Boshqa so'rovlarga javob
+  await ctx.answerInlineQuery([], { cache_time: 0 });
+});
+
+// Unique havolalar yaratish va ko'rsatish komandasi
 bot.command("start", async (ctx) => {
   ctx.session = ctx.session || {};
   let userId = ctx.match;
@@ -33,32 +76,27 @@ bot.command("start", async (ctx) => {
     }
 
     const uniqueLink = `https://t.me/${ctx.me.username}?start=${userId}`;
-    const keyboard = new InlineKeyboard()
-      .url(
-        "📤 Havolani ulashish",
-        `https://t.me/share/url?url=${encodeURIComponent(
-          uniqueLink
-        )}&text=Havotirsiz%20anonim%20suhbat%20quring!`
-      )
-      .row();
+    const keyboard = new InlineKeyboard().switchInline("📤 Ulashish 🔗").row();
 
     await ctx.reply(
-      `🎉 Bu sizning shaxsiy havolangiz:\n\n🔗 ${uniqueLink}\n\n🔒 Havolangizni ulashing va havotirsiz anonim suhbat quring!`,
+      `🎉 Sizning shaxsiy havolangiz:\n\n🔗 ${uniqueLink}\n\nUlashish uchun bosing va anonim suhbatlar quring!`,
       { reply_markup: keyboard }
     );
 
     ctx.session.askingUserId = null;
   } else {
-    await ctx.reply("🤔 Iltimos, anonim savolingizni bering: ");
+    await ctx.reply("🤔 Iltimos, anonim savolingizni yozing:");
     ctx.session.askingUserId = parseInt(userId);
   }
 });
 
+// Foydalanuvchi sonini ko'rsatish komandasi
 bot.command("users", async (ctx) => {
   const userCount = await prisma.user.count();
   await ctx.reply(`👥 Hozirda ${userCount} ta foydalanuvchi bor.`);
 });
 
+// Anonim savollar va javoblarni boshqarish
 bot.on("message", async (ctx) => {
   if (ctx.session.replyingUserId) {
     const replyingUserId = ctx.session.replyingUserId;
@@ -67,18 +105,18 @@ bot.on("message", async (ctx) => {
     const keyboard = new InlineKeyboard()
       .text("🔄 Javob berish", `reply:${ctx.from.id}`)
       .row()
-      .text("ISHGA JOYLASHISH", `hello`);
+      .text("🔎 ISHGA JOYLASHISH", `hello`);
 
     await ctx.api.sendMessage(
       replyingUserId,
-      `💬 Sizning savolingizga javob berildi: \n\n${replyText}`,
+      `💬 Sizning savolingizga javob berildi:\n\n${replyText}`,
       {
         reply_markup: keyboard,
       }
     );
 
     ctx.session.replyingUserId = null;
-    await ctx.reply("✅ Sizning javobingiz anonim foydalanuvchiga jo'natildi!");
+    await ctx.reply("✅ Sizning javobingiz anonim foydalanuvchiga yuborildi!");
     return;
   }
 
@@ -96,7 +134,7 @@ bot.on("message", async (ctx) => {
     const keyboard = new InlineKeyboard()
       .text("🔄 Javob berish", `reply:${ctx.from.id}`)
       .row()
-      .text("ISHGA JOYLASHISH", `hello`);
+      .text("🔎 ISHGA JOYLASHISH", `hello`);
 
     await ctx.api.sendMessage(
       askingUserId,
@@ -110,30 +148,17 @@ bot.on("message", async (ctx) => {
     const anotherQuestionKeyboard = new InlineKeyboard()
       .text("❓ Yana savol berish", `start:${ctx.session.askingUserId}`)
       .row()
-      .text("ISHGA JOYLASHISH", `hello`);
+      .text("🔎 ISHGA JOYLASHISH", `hello`);
 
-    await ctx.reply(`✅ Sizning anonim savolingiz jo'natildi!`, {
+    await ctx.reply(`✅ Sizning anonim savolingiz yuborildi!`, {
       reply_markup: anotherQuestionKeyboard,
     });
-
-    const shareLinkKeyboard = new InlineKeyboard()
-      .url(
-        "📤 Havolani ulashish",
-        `https://t.me/share/url?url=${encodeURIComponent(
-          uniqueLink
-        )}&text=Havotirsiz%20anonim%20suhbat%20quring!`
-      )
-      .row();
-
-    await ctx.reply(
-      `🎉 Bu sizning shaxsiy havolangiz:\n\n🔗 ${uniqueLink}\n\n🔒 Havolangizni ulashing va havotirsiz anonim suhbat quring!`,
-      { reply_markup: shareLinkKeyboard }
-    );
 
     ctx.session.askingUserId = null;
     return;
   }
 
+  // Reklama yuborish
   if (ctx.session.isSendingAd) {
     const users = await prisma.user.findMany();
 
@@ -144,43 +169,7 @@ bot.on("message", async (ctx) => {
           await ctx.api.sendMessage(user.userId, `📢 ${adMessage}`);
         } catch (error) {
           console.error(
-            `Could not send message to user ${user.userId}:`,
-            error
-          );
-        }
-      }
-    } else if (ctx.message.photo) {
-      const photoId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
-      for (const user of users) {
-        try {
-          await ctx.api.sendPhoto(user.userId, photoId, {
-            caption: ctx.message.caption || "",
-          });
-        } catch (error) {
-          console.error(`Could not send photo to user ${user.userId}:`, error);
-        }
-      }
-    } else if (ctx.message.video) {
-      const videoId = ctx.message.video.file_id;
-      for (const user of users) {
-        try {
-          await ctx.api.sendVideo(user.userId, videoId, {
-            caption: ctx.message.caption || "",
-          });
-        } catch (error) {
-          console.error(`Could not send video to user ${user.userId}:`, error);
-        }
-      }
-    } else if (ctx.message.document) {
-      const documentId = ctx.message.document.file_id;
-      for (const user of users) {
-        try {
-          await ctx.api.sendDocument(user.userId, documentId, {
-            caption: ctx.message.caption || "",
-          });
-        } catch (error) {
-          console.error(
-            `Could not send document to user ${user.userId}:`,
+            `Foydalanuvchiga xabar yuborilmadi: ${user.userId}`,
             error
           );
         }
@@ -188,27 +177,31 @@ bot.on("message", async (ctx) => {
     }
 
     ctx.session.isSendingAd = false;
-    await ctx.reply("✅ Your ad has been successfully sent to all users! 🎉");
+    await ctx.reply(
+      "✅ Reklamangiz barcha foydalanuvchilarga muvaffaqiyatli yuborildi! 🎉"
+    );
     return;
   }
 });
 
+// Javob va yangi anonim suhbatlar uchun callback query handler
 bot.callbackQuery(/reply:(.+)/, async (ctx) => {
   const askingUserId = ctx.match[1];
-  await ctx.reply("✍️ Iltimos javobingizni yozing:");
+  await ctx.reply("✍️ Javobingizni yozing:");
   ctx.session.replyingUserId = askingUserId;
 });
 
 bot.callbackQuery(/start:(.+)/, async (ctx) => {
   const userId = ctx.match[1];
   ctx.session.askingUserId = parseInt(userId);
-  await ctx.reply("🤔 Iltimos, yangi anonim savolingizni bering:");
+  await ctx.reply("🤔 Yangi anonim savolingizni yozing:");
 });
 
 bot.callbackQuery("hello", async (ctx) => {
   await ctx.reply(
-    "Assalomu alaykum!😊\n\nBo'sh ish o'rinlarini ko'rish uchun quyidagi havola orqali so'rov qoldiring 🔰\nhttps://t.me/+RGYfSDrzvNpiZjcy"
+    "Assalomu alaykum!😊\n\nBo'sh ish o'rinlarini ko'rish uchun quyidagi havola orqali so'rov qoldiring  🔰\nhttps://t.me/+RGYfSDrzvNpiZjcy"
   );
 });
 
+// Botni ishga tushirish
 bot.start();
